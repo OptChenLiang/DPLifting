@@ -14,8 +14,8 @@
 
 #define DPLIFTING_VERSION_MAJOR 1
 #define DPLIFTING_VERSION_MINOR 4
-#define DPLIFTING_VERSION_PATCH 0
-#define DPLIFTING_VERSION "1.4.0"
+#define DPLIFTING_VERSION_PATCH 1
+#define DPLIFTING_VERSION "1.4.1"
 #include <stdio.h>
 #include <time.h>
 #include <math.h>
@@ -51,11 +51,13 @@
 #define DPLIFTING_DEFAULT_RHO_TH   6.0
 #define DPLIFTING_DEFAULT_BETA_TH  6.0
 #define DPLIFTING_DEFAULT_UBAR_TH  3.0
+/** +R AUTO: disable when λ = b / Σ w_i u_i is below this (tight rows). */
+#define DPLIFTING_DEFAULT_LAMBDA_TH 0.1
 
 /**
  * +R axis (orthogonal to DPL/DPT), lift->reduction_request:
  *   RED_ON / RED_OFF — manual
- *   RED_AUTO         — default: enable iff bar b^0 > τ (large residual; same τ as mid-lift)
+ *   RED_AUTO         — default: enable iff λ ≥ λ_th and bar b^0 > τ
  */
 #define DPLIFTING_RED_AUTO 0
 #define DPLIFTING_RED_ON   1
@@ -168,11 +170,13 @@ typedef struct DPLifting
    double             rho_th;
    double             beta_th;
    double             u_bar_th;
+   double             lambda_th;       // +R AUTO: disable if λ < lambda_th (0 → default 0.1)
    int                reduction_request; // RED_AUTO / RED_ON / RED_OFF
    double             switch_cap;      // resolved τ
    double             feat_rho;
    double             feat_beta;
    double             feat_ubar;
+   double             feat_lambda;     // λ = cap / Σ w_i u_i (0 if undefined)
 } Lifting;
 
 /** Row features for backend / reduction selection. */
@@ -180,6 +184,7 @@ typedef struct DPLiftingFeatures {
    double rho_w;   /**< w_max / w_min (1 if degenerate) */
    double beta;    /**< cap / mean(w) */
    double u_bar;   /**< mean(u); INF treated as large */
+   double lambda;  /**< cap / Σ w_i u_i; 0 if unbounded / empty */
    double w_mean;
    double w_min;
    double w_max;
@@ -190,6 +195,7 @@ typedef struct DPLiftingPolicy {
    double rho_th;
    double beta_th;
    double u_bar_th;
+   double lambda_th; /**< +R AUTO off when λ < this; 0 → DPLIFTING_DEFAULT_LAMBDA_TH */
    int prefer_dpl_fuzzy; /**< 1: boundary band favors DPL (default) */
 } DPLiftingPolicy;
 
@@ -262,7 +268,7 @@ DPLIFTING_API int lifting(
       double* rhs,
       int isLeq, double* x, int n, double threshold, double duration, int isdpl_mode);
 
-/** Fill policy with library defaults (rho=beta=6, u_bar=3, fuzzy DPL). */
+/** Fill policy with library defaults (rho=beta=6, u_bar=3, lambda_th=0.1, fuzzy DPL). */
 DPLIFTING_API void dplifting_policy_default(DPLiftingPolicy* pol);
 
 /** Compute rho_w, beta, u_bar from a knapsack row. */
@@ -336,6 +342,20 @@ DPLIFTING_API int dplifting_lift_cover(
 
 #ifdef __cplusplus
 }
+#endif
+
+/* Integer benches still pass -DDLLIFTING_REDUCTION and use pre-rename names. */
+#if defined(DLLIFTING_REDUCTION) && !defined(DPLIFTING_REDUCTION)
+#  define DPLIFTING_REDUCTION
+#endif
+#ifndef DPLIFTING_NO_LEGACY_ALIASES
+typedef DPLifting DLLifting;
+#define EPS_DL EPS_DPL
+#define INF_DL INF_DPL
+#define DLLIFTING_MODE_AUTO      DPLIFTING_MODE_AUTO
+#define DLLIFTING_MODE_THRESHOLD DPLIFTING_MODE_THRESHOLD
+#define DLLIFTING_MODE_DP        DPLIFTING_MODE_DPT
+#define DLLIFTING_MODE_DL        DPLIFTING_MODE_DPL
 #endif
 
 #endif

@@ -1,6 +1,6 @@
 # DPLifting
 
-**DPLifting** (v1.4.0) is a standalone C/C++ library for **DPL/DPT hybrid coefficient lifting** on general knapsack sets. Optional capacity reduction (**+R**) is independent of the DPL/DPT backend. Prefer the C++ API `lifting()` or the C ABI `dplifting_lift_cover()`.
+**DPLifting** (v1.4.1) is a standalone C/C++ library for **DPL/DPT hybrid coefficient lifting** on general knapsack sets. Optional capacity reduction (**+R**) is independent of the DPL/DPT backend. Prefer the C++ API `lifting()` or the C ABI `dplifting_lift_cover()`.
 
 ## Scope
 
@@ -64,17 +64,22 @@ Helpers: `dplifting_compute_features`, `dplifting_select_backend`, `dplifting_po
 
 Requires compile-time `REDUCTION=1` (default in `make`). Always disabled if any variable is treated as unbounded.
 
+Define the relative fill \(\lambda = b / \sum_i w_i u_i\) from the knapsack rhs \(b\) (`cap`) and all finite upper bounds.
+
 | Value | Meaning |
 | ----- | ------- |
 | `DPLIFTING_RED_ON` / `_OFF` | **Manual** |
-| `DPLIFTING_RED_AUTO` (0, default) | Enable iff \(\bar b^0 > \tau\) (large residual) |
+| `DPLIFTING_RED_AUTO` (0, default) | Enable iff \(\lambda \ge \lambda_{\mathrm{th}}\) **and** \(\bar b^0 > \tau\) |
+
+Default \(\lambda_{\mathrm{th}}=0.1\) (`DPLIFTING_DEFAULT_LAMBDA_TH`). Override with `lift->lambda_th` before the call (`0` → library default).  
+**If \(\lambda < 0.1\), +R AUTO turns reduction off** (tight rows; reduction rarely helps and adds overhead).
 
 ### Role of `threshold`
 
 | Context | Role of `threshold` |
 | ------- | ------------------- |
 | `MODE_THRESHOLD` | \(\tau\) for initial + mid-lift |
-| `RED_AUTO` | \(\tau\) for the \(\bar b^0 > \tau\) test |
+| `RED_AUTO` | \(\tau\) for the \(\bar b^0 > \tau\) test (only after the \(\lambda\) gate) |
 | `MODE_AUTO` / `_DPL` / `_DPT` | **Not** used to choose the backend |
 
 If `threshold <= 0`, \(\tau=\beta_{\mathrm{th}}\cdot\mathrm{mean}(w)\).
@@ -100,7 +105,7 @@ lifting(&lift, ..., 0.0, 0.0, DPLIFTING_MODE_AUTO);
 
 ## API
 
-Header: `include/DPLifting.h` (shim: `dplifting_c.h`). Version: `DPLIFTING_VERSION` (`"1.4.0"`).
+Header: `include/DPLifting.h` (shim: `dplifting_c.h`). Version: `DPLIFTING_VERSION` (`"1.4.1"`).
 
 ### `lifting` (C++)
 
@@ -118,7 +123,7 @@ int lifting(
 
 | Parameter | Meaning |
 | --------- | ------- |
-| `lift` | Workspace. Optionally set `reduction_request`, `rho_th`, `beta_th`, `u_bar_th` before the call. On success `lift->duration` is CPU seconds (struct is cleared/rebuilt inside; policy fields are preserved). |
+| `lift` | Workspace. Optionally set `reduction_request`, `rho_th`, `beta_th`, `u_bar_th`, `lambda_th` before the call. On success `lift->duration` is CPU seconds; `feat_lambda` holds \(\lambda=b/\sum w_i u_i\) (struct is cleared/rebuilt inside; policy fields are preserved). |
 | `p` | Seed coefficients in → lifted coefficients out |
 | `w`, `u` | Weights and upper bounds |
 | `isuseub` | `1` = down-lift (fix at UB), `0` = up-lift |
@@ -198,6 +203,6 @@ MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Xintong Wang, Liang Chen, Yu-
 
 ```
 Xintong Wang et al. DPLifting: DPL/DPT hybrid lifting for general knapsack set.
-https://github.com/OptChenLiang/DPLifting (version 1.4.0).
+https://github.com/OptChenLiang/DPLifting (version 1.4.1).
 https://159.226.92.34:8000/wangxintong/dllifting
 ```

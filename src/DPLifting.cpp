@@ -8,6 +8,9 @@
 
 #define INITSIZE_LIFTING 5000000
 #define CHECK 1
+#if defined(DLLIFTING_REDUCTION) && !defined(DPLIFTING_REDUCTION)
+#  define DPLIFTING_REDUCTION
+#endif
 #ifndef REDUCTION
 #  ifdef DPLIFTING_REDUCTION
 #    define REDUCTION 1
@@ -51,6 +54,7 @@ void dplifting_policy_default(DPLiftingPolicy* pol)
    pol->rho_th = DPLIFTING_DEFAULT_RHO_TH;
    pol->beta_th = DPLIFTING_DEFAULT_BETA_TH;
    pol->u_bar_th = DPLIFTING_DEFAULT_UBAR_TH;
+   pol->lambda_th = DPLIFTING_DEFAULT_LAMBDA_TH;
    pol->prefer_dpl_fuzzy = 1;
 }
 
@@ -62,13 +66,15 @@ void dplifting_compute_features(
    feat->rho_w = 1.0;
    feat->beta = 0.0;
    feat->u_bar = 0.0;
+   feat->lambda = 0.0;
    feat->w_mean = 0.0;
    feat->w_min = 0.0;
    feat->w_max = 0.0;
    if(!w || n <= 0)
       return;
-   double wmin = w[0], wmax = w[0], wsum = 0.0, usum = 0.0;
+   double wmin = w[0], wmax = w[0], wsum = 0.0, usum = 0.0, wu = 0.0;
    int i;
+   int any_unb = 0;
    for(i = 0; i < n; i++)
    {
       double wi = w[i];
@@ -78,7 +84,18 @@ void dplifting_compute_features(
          wmax = wi;
       wsum += wi;
       if(u)
-         usum += ISINF(u[i]) ? 1e6 : u[i];
+      {
+         if(ISINF(u[i]))
+         {
+            any_unb = 1;
+            usum += 1e6;
+         }
+         else
+         {
+            usum += u[i];
+            wu += wi * u[i];
+         }
+      }
    }
    feat->w_min = wmin;
    feat->w_max = wmax;
@@ -86,6 +103,9 @@ void dplifting_compute_features(
    feat->u_bar = u ? (usum / (double)n) : 0.0;
    feat->rho_w = (wmin > EPS_DPL) ? (wmax / wmin) : 1.0;
    feat->beta = (feat->w_mean > EPS_DPL) ? (cap / feat->w_mean) : 0.0;
+   /* λ = b / Σ w_i u_i; undefined (0) if any unbounded ub. */
+   if(!any_unb && u && wu > EPS_DPL)
+      feat->lambda = cap / wu;
 }
 
 static void dplifting_policy_fill(DPLiftingPolicy* pol)
@@ -96,6 +116,8 @@ static void dplifting_policy_fill(DPLiftingPolicy* pol)
       pol->beta_th = DPLIFTING_DEFAULT_BETA_TH;
    if(pol->u_bar_th <= 0)
       pol->u_bar_th = DPLIFTING_DEFAULT_UBAR_TH;
+   if(pol->lambda_th <= 0)
+      pol->lambda_th = DPLIFTING_DEFAULT_LAMBDA_TH;
 }
 
 int dplifting_select_backend(const DPLiftingFeatures* feat, const DPLiftingPolicy* pol)
@@ -1236,14 +1258,20 @@ int Lifting_Init(
       Lifting_Calsubcap(lift);
    }
 #ifdef REDUCTION
-   /* +R AUTO: same mid-lift rule — large residual (bar b > τ) enables reduction. */
+   /* +R AUTO: off when λ < λ_th (tight); else enable iff large residual bar b > τ. */
    if(lift->reduction_request == DPLIFTING_RED_AUTO && lift->reduction_active)
    {
-      double tau = lift->switch_cap;
-      if(tau <= 0)
-         tau = lift->threshold;
-      double barb = Lifting_bar_b(lift);
-      lift->reduction_active = (barb > tau + EPS_DPL) ? 1 : 0;
+      double lam_th = lift->lambda_th > 0 ? lift->lambda_th : DPLIFTING_DEFAULT_LAMBDA_TH;
+      if(lift->feat_lambda + EPS_DPL < lam_th)
+         lift->reduction_active = 0;
+      else
+      {
+         double tau = lift->switch_cap;
+         if(tau <= 0)
+            tau = lift->threshold;
+         double barb = Lifting_bar_b(lift);
+         lift->reduction_active = (barb > tau + EPS_DPL) ? 1 : 0;
+      }
    }
    Lifting_record_reduction_init(lift);
 #else
@@ -1567,12 +1595,14 @@ int lifting(
    const double save_rho_th = lift->rho_th;
    const double save_beta_th = lift->beta_th;
    const double save_ubar_th = lift->u_bar_th;
+   const double save_lambda_th = lift->lambda_th;
    const int save_red_req = lift->reduction_request;
 
    std::memset(lift, 0, sizeof(*lift));
    lift->rho_th = save_rho_th;
    lift->beta_th = save_beta_th;
    lift->u_bar_th = save_ubar_th;
+   lift->lambda_th = save_lambda_th;
    lift->reduction_request = save_red_req;
    lift->time_limit = duration;
    lift->t_start = Lifting_GetTime();
@@ -1613,12 +1643,17 @@ int lifting(
          pol.u_bar_th = lift->u_bar_th;
       else
          lift->u_bar_th = pol.u_bar_th;
+      if(lift->lambda_th > 0)
+         pol.lambda_th = lift->lambda_th;
+      else
+         lift->lambda_th = pol.lambda_th;
 
       DPLiftingFeatures feat;
       dplifting_compute_features(w, u, n, cap, &feat);
       lift->feat_rho = feat.rho_w;
       lift->feat_beta = feat.beta;
       lift->feat_ubar = feat.u_bar;
+      lift->feat_lambda = feat.lambda;
 
       Lifting_resolve_tau(lift, threshold, feat.w_mean);
       Lifting_apply_isdpl_mode(lift, isdpl_mode, &feat, &pol, cap);

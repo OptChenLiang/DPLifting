@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.1] - 2026-08-27
+
+### Changed
+
+- **+R AUTO:** disable reduction when \(\lambda = b/\sum_i w_i u_i < \lambda_{\mathrm{th}}\)
+  (default \(\lambda_{\mathrm{th}}=0.1\)). Otherwise keep \(\bar b^0 > \tau\) gate.
+- New fields: `lift->lambda_th`, `lift->feat_lambda`; `DPLiftingFeatures.lambda`,
+  `DPLiftingPolicy.lambda_th`; macro `DPLIFTING_DEFAULT_LAMBDA_TH`.
+
 ## [1.4.0] - 2026-08-20
 
 ### Changed
